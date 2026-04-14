@@ -1,53 +1,49 @@
 from kokoro_onnx import Kokoro
-import soundfile as sf
+import struct
 import os
-import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 voices = {
-    # Female - American
     "af_bella":   "en-us",
     "af_sarah":   "en-us",
     "af_nicole":  "en-us",
     "af_sky":     "en-us",
-    # Male - American
     "am_adam":    "en-us",
     "am_michael": "en-us",
-    # Female - British
     "bf_emma":    "en-gb",
     "bf_isabella":"en-gb",
-    # Male - British
     "bm_george":  "en-gb",
     "bm_lewis":   "en-gb",
 }
 
-def make_voice_file(text, voice="af_sarah", lang="en-us", speed=1.0):
-    try:
-        output_dir = os.path.join( "temp_voice")
-        os.makedirs(output_dir, exist_ok=True)
+def get_kokoro():
+    return Kokoro(
+        os.path.join(BASE_DIR, "voice_model", "kokoro-v1.0.fp16-gpu.onnx"),
+        os.path.join(BASE_DIR, "voice_model", "voices.bin")
+    )
 
-        kokoro = Kokoro(
-            os.path.join( BASE_DIR, "voice_model", "kokoro-v1.0.fp16-gpu.onnx"),
-            os.path.join( BASE_DIR, "voice_model", "voices.bin")
-        )
+def make_wav_header(sample_rate=24000, num_channels=1, bits_per_sample=16):
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    header = struct.pack('<4sI4s4sIHHIIHH4sI',
+        b'RIFF', 0xFFFFFFFF, b'WAVE', b'fmt ',
+        16, 1, num_channels, sample_rate,
+        byte_rate, block_align, bits_per_sample,
+        b'data', 0xFFFFFFFF
+    )
+    return header
 
-        file_name = str(int(time.time())) + ".wav"
-        output_path = os.path.join(output_dir, file_name)
+# async generator banana pada kyunki create_stream() async hai
+async def stream_voice_chunks(text, voice="af_sarah", lang="en-us", speed=1.0):
+    kokoro = get_kokoro()
 
-        voice_binary, rate = kokoro.create(text, voice=voice, speed=speed, lang=lang)
-        sf.write(output_path, voice_binary, rate)
+    yield make_wav_header(sample_rate=24000)
 
-        return output_path
-
-    except Exception as e:
-        print(f"Error generating voice at utils/Kokoro_tts/kokoro.py: {e}")
-        return str(e)
+    # async for — normal for nahi chalega
+    async for samples, sample_rate in kokoro.create_stream(text, voice=voice, speed=speed, lang=lang):
+        pcm = (samples * 32767).astype('int16')
+        yield pcm.tobytes()
 
 def get_all_voice():
     return voices
-
-if __name__ == "__main__":
-    result = make_voice_file(text="Welcome to open reader. An Open source text to speech software created by Saumya Sarma.")
-    print(f"Result: {result}")
-    print(f"Files in temp_voice: {os.listdir(os.path.join( 'temp_voice'))}")

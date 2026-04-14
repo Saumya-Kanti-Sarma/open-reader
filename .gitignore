@@ -1,8 +1,11 @@
 .vscode
 venv
+vevn
 node_modules
 tests
 
 *.onnx
 *.bin
 *.wav
+
+__pycache__
